@@ -18,14 +18,15 @@
 
 package org.apache.flink.runtime.checkpoint;
 
+import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.common.time.Time;
 import org.apache.flink.runtime.concurrent.ComponentMainThreadExecutorServiceAdapter;
 import org.apache.flink.runtime.execution.ExecutionState;
 import org.apache.flink.runtime.executiongraph.Execution;
 import org.apache.flink.runtime.executiongraph.ExecutionGraph;
-import org.apache.flink.runtime.executiongraph.ExecutionGraphTestUtils;
 import org.apache.flink.runtime.executiongraph.ExecutionVertex;
-import org.apache.flink.runtime.jobgraph.JobStatus;
+import org.apache.flink.runtime.executiongraph.TestingExecutionGraphBuilder;
+import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobgraph.JobVertex;
 import org.apache.flink.runtime.jobgraph.tasks.AbstractInvokable;
 import org.apache.flink.runtime.jobgraph.tasks.CheckpointCoordinatorConfiguration;
@@ -138,10 +139,11 @@ public class ExecutionGraphCheckpointCoordinatorTest extends TestLogger {
 		JobVertex jobVertex = new JobVertex("MockVertex");
 		jobVertex.setInvokableClass(AbstractInvokable.class);
 
-		final ExecutionGraph executionGraph = new ExecutionGraphTestUtils.TestingExecutionGraphBuilder(jobVertex)
+		final ExecutionGraph executionGraph = TestingExecutionGraphBuilder
+			.newBuilder()
+			.setJobGraph(new JobGraph(jobVertex))
 			.setRpcTimeout(timeout)
 			.setAllocationTimeout(timeout)
-			.allowQueuedScheduling()
 			.build();
 
 		executionGraph.start(ComponentMainThreadExecutorServiceAdapter.forMainThread());
@@ -153,6 +155,7 @@ public class ExecutionGraphCheckpointCoordinatorTest extends TestLogger {
 			1,
 			CheckpointRetentionPolicy.NEVER_RETAIN_AFTER_TERMINATION,
 			true,
+			false,
 			false,
 			0);
 
@@ -216,7 +219,7 @@ public class ExecutionGraphCheckpointCoordinatorTest extends TestLogger {
 		}
 
 		@Override
-		public void addCheckpoint(CompletedCheckpoint checkpoint) {
+		public void addCheckpoint(CompletedCheckpoint checkpoint, CheckpointsCleaner checkpointsCleaner, Runnable postCleanup) {
 			throw new UnsupportedOperationException("Not implemented.");
 		}
 
@@ -226,7 +229,7 @@ public class ExecutionGraphCheckpointCoordinatorTest extends TestLogger {
 		}
 
 		@Override
-		public void shutdown(JobStatus jobStatus) {
+		public void shutdown(JobStatus jobStatus, CheckpointsCleaner checkpointsCleaner, Runnable postCleanup) {
 			shutdownStatus.complete(jobStatus);
 		}
 

@@ -18,10 +18,8 @@
 
 package org.apache.flink.runtime.scheduler.strategy;
 
-import org.apache.flink.api.common.InputDependencyConstraint;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
 import org.apache.flink.runtime.jobgraph.IntermediateDataSetID;
-import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.util.TestLogger;
 
 import org.junit.Test;
@@ -31,12 +29,8 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.apache.flink.api.common.InputDependencyConstraint.ALL;
-import static org.apache.flink.api.common.InputDependencyConstraint.ANY;
 import static org.apache.flink.runtime.io.network.partition.ResultPartitionType.BLOCKING;
 import static org.apache.flink.runtime.io.network.partition.ResultPartitionType.PIPELINED;
-import static org.apache.flink.runtime.scheduler.strategy.SchedulingResultPartition.ResultPartitionState.DONE;
-import static org.apache.flink.runtime.scheduler.strategy.SchedulingResultPartition.ResultPartitionState.EMPTY;
-import static org.apache.flink.runtime.scheduler.strategy.SchedulingResultPartition.ResultPartitionState.PRODUCING;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -47,21 +41,22 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 
 	@Test
 	public void testCheckInputVertex() {
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex().finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex.newBuilder().build();
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(Collections.emptyList());
 
 		assertTrue(inputChecker.check(vertex));
 	}
 
 	@Test
-	public void testCheckEmptyPipelinedInput() {
+	public void testCheckCreatedPipelinedInput() {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withPartitionType(PIPELINED)
-			.withPartitionState(EMPTY)
+			.withPartitionState(ResultPartitionState.CREATED)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -69,14 +64,15 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 	}
 
 	@Test
-	public void testCheckProducingPipelinedInput() {
+	public void testCheckConsumablePipelinedInput() {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withPartitionType(PIPELINED)
-			.withPartitionState(PRODUCING)
+			.withPartitionState(ResultPartitionState.CONSUMABLE)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -88,9 +84,9 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withPartitionCntPerDataSet(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex.newBuilder()
 			.withConsumedPartitions(partitions)
-			.finish();
+			.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -106,9 +102,10 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withPartitionCntPerDataSet(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -122,9 +119,10 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withPartitionCntPerDataSet(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -144,9 +142,10 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withDataSetCnt(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -160,10 +159,10 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withDataSetCnt(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex.newBuilder()
 			.withInputDependencyConstraint(ALL)
 			.withConsumedPartitions(partitions)
-			.finish();
+			.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -179,10 +178,11 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		final List<TestingSchedulingResultPartition> partitions = addResultPartition()
 			.withDataSetCnt(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withInputDependencyConstraint(ALL)
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withInputDependencyConstraint(ALL)
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -196,10 +196,11 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 			.withDataSetCnt(2)
 			.withPartitionCntPerDataSet(2)
 			.finish();
-		final TestingSchedulingExecutionVertex vertex = addSchedulingExecutionVertex()
-			.withInputDependencyConstraint(ALL)
-			.withConsumedPartitions(partitions)
-			.finish();
+		final TestingSchedulingExecutionVertex vertex = TestingSchedulingExecutionVertex
+				.newBuilder()
+				.withInputDependencyConstraint(ALL)
+				.withConsumedPartitions(partitions)
+				.build();
 
 		final InputDependencyConstraintChecker inputChecker = createInputDependencyConstraintChecker(partitions);
 
@@ -208,30 +209,6 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		}
 
 		assertFalse(inputChecker.check(vertex));
-	}
-
-	private static TestingSchedulingExecutionVertexBuilder addSchedulingExecutionVertex() {
-		return new TestingSchedulingExecutionVertexBuilder();
-	}
-
-	private static class TestingSchedulingExecutionVertexBuilder {
-		private static final JobVertexID jobVertexId = new JobVertexID();
-		private InputDependencyConstraint inputDependencyConstraint = ANY;
-		private List<TestingSchedulingResultPartition> partitions = Collections.emptyList();
-
-		TestingSchedulingExecutionVertexBuilder withInputDependencyConstraint(InputDependencyConstraint constraint) {
-			this.inputDependencyConstraint = constraint;
-			return this;
-		}
-
-		TestingSchedulingExecutionVertexBuilder withConsumedPartitions(List<TestingSchedulingResultPartition> partitions) {
-			this.partitions = partitions;
-			return this;
-		}
-
-		TestingSchedulingExecutionVertex finish() {
-			return new TestingSchedulingExecutionVertex(jobVertexId, 0, inputDependencyConstraint, partitions);
-		}
 	}
 
 	private static TestingSchedulingResultPartitionBuilder addResultPartition() {
@@ -252,7 +229,7 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 		private int dataSetCnt = 1;
 		private int partitionCntPerDataSet = 1;
 		private ResultPartitionType partitionType = BLOCKING;
-		private SchedulingResultPartition.ResultPartitionState partitionState = DONE;
+		private ResultPartitionState partitionState = ResultPartitionState.CONSUMABLE;
 
 		TestingSchedulingResultPartitionBuilder withDataSetCnt(int dataSetCnt) {
 			this.dataSetCnt = dataSetCnt;
@@ -269,7 +246,7 @@ public class InputDependencyConstraintCheckerTest extends TestLogger {
 			return this;
 		}
 
-		TestingSchedulingResultPartitionBuilder withPartitionState(SchedulingResultPartition.ResultPartitionState state) {
+		TestingSchedulingResultPartitionBuilder withPartitionState(ResultPartitionState state) {
 			this.partitionState = state;
 			return this;
 		}

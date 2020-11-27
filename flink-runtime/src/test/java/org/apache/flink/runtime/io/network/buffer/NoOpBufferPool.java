@@ -22,7 +22,9 @@ package org.apache.flink.runtime.io.network.buffer;
 
 import org.apache.flink.core.memory.MemorySegment;
 
-import java.io.IOException;
+import javax.annotation.Nullable;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * No-op implementation of {@link BufferPool}.
@@ -34,17 +36,27 @@ public class NoOpBufferPool implements BufferPool {
 	}
 
 	@Override
-	public Buffer requestBuffer() throws IOException {
+	public Buffer requestBuffer() {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public Buffer requestBufferBlocking() throws IOException, InterruptedException {
+	public BufferBuilder requestBufferBuilder() {
 		throw new UnsupportedOperationException();
 	}
 
 	@Override
-	public BufferBuilder requestBufferBuilderBlocking() throws IOException, InterruptedException {
+	public BufferBuilder requestBufferBuilderBlocking() throws InterruptedException {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public BufferBuilder requestBufferBuilder(int targetChannel) {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public BufferBuilder requestBufferBuilderBlocking(int targetChannel) throws InterruptedException {
 		throw new UnsupportedOperationException();
 	}
 
@@ -74,7 +86,7 @@ public class NoOpBufferPool implements BufferPool {
 	}
 
 	@Override
-	public void setNumBuffers(int numBuffers) throws IOException {
+	public void setNumBuffers(int numBuffers) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -88,8 +100,19 @@ public class NoOpBufferPool implements BufferPool {
 		throw new UnsupportedOperationException();
 	}
 
+	@Nullable
+	@Override
+	public BufferRecycler[] getSubpartitionBufferRecyclers() {
+		return new BufferRecycler[0];
+	}
+
 	@Override
 	public void recycle(MemorySegment memorySegment) {
 		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public CompletableFuture<?> getAvailableFuture() {
+		return AVAILABLE;
 	}
 }

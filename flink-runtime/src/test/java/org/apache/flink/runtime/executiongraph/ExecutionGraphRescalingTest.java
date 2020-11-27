@@ -25,7 +25,7 @@ import org.apache.flink.runtime.akka.AkkaUtils;
 import org.apache.flink.runtime.blob.VoidBlobWriter;
 import org.apache.flink.runtime.checkpoint.StandaloneCheckpointRecoveryFactory;
 import org.apache.flink.runtime.executiongraph.restart.NoRestartStrategy;
-import org.apache.flink.runtime.io.network.partition.NoOpPartitionTracker;
+import org.apache.flink.runtime.io.network.partition.NoOpJobMasterPartitionTracker;
 import org.apache.flink.runtime.io.network.partition.ResultPartitionType;
 import org.apache.flink.runtime.jobgraph.DistributionPattern;
 import org.apache.flink.runtime.jobgraph.JobGraph;
@@ -81,7 +81,8 @@ public class ExecutionGraphRescalingTest extends TestLogger {
 			AkkaUtils.getDefaultTimeout(),
 			TEST_LOGGER,
 			NettyShuffleMaster.INSTANCE,
-			NoOpPartitionTracker.INSTANCE);
+			NoOpJobMasterPartitionTracker.INSTANCE,
+			System.currentTimeMillis());
 
 		for (JobVertex jv : jobVertices) {
 			assertThat(jv.getParallelism(), is(initialParallelism));
@@ -112,7 +113,8 @@ public class ExecutionGraphRescalingTest extends TestLogger {
 			AkkaUtils.getDefaultTimeout(),
 			TEST_LOGGER,
 			NettyShuffleMaster.INSTANCE,
-			NoOpPartitionTracker.INSTANCE);
+			NoOpJobMasterPartitionTracker.INSTANCE,
+			System.currentTimeMillis());
 
 		for (JobVertex jv : jobVertices) {
 			assertThat(jv.getParallelism(), is(1));
@@ -143,7 +145,8 @@ public class ExecutionGraphRescalingTest extends TestLogger {
 			AkkaUtils.getDefaultTimeout(),
 			TEST_LOGGER,
 			NettyShuffleMaster.INSTANCE,
-			NoOpPartitionTracker.INSTANCE);
+			NoOpJobMasterPartitionTracker.INSTANCE,
+			System.currentTimeMillis());
 
 		for (JobVertex jv : jobVertices) {
 			assertThat(jv.getParallelism(), is(scaleUpParallelism));
@@ -187,7 +190,8 @@ public class ExecutionGraphRescalingTest extends TestLogger {
 				AkkaUtils.getDefaultTimeout(),
 				TEST_LOGGER,
 				NettyShuffleMaster.INSTANCE,
-				NoOpPartitionTracker.INSTANCE);
+				NoOpJobMasterPartitionTracker.INSTANCE,
+				System.currentTimeMillis());
 
 			fail("Building the ExecutionGraph with a parallelism higher than the max parallelism should fail.");
 		} catch (JobException e) {

@@ -22,11 +22,18 @@ import org.apache.calcite.plan.{RelOptCluster, RelTraitSet}
 import org.apache.calcite.rel.RelNode
 import org.apache.calcite.rel.core.Calc
 import org.apache.calcite.rex.RexProgram
+import org.apache.flink.api.java.typeutils.RowTypeInfo
+import org.apache.flink.core.memory.ManagedMemoryUseCase
 import org.apache.flink.streaming.api.datastream.DataStream
-import org.apache.flink.table.api.StreamQueryConfig
+import org.apache.flink.table.calcite.FlinkTypeFactory
+import org.apache.flink.table.plan.nodes.CommonPythonCalc
 import org.apache.flink.table.plan.schema.RowSchema
 import org.apache.flink.table.planner.StreamPlanner
-import org.apache.flink.table.runtime.types.CRow
+import org.apache.flink.table.runtime.types.{CRow, CRowTypeInfo}
+import org.apache.flink.table.types.logical.RowType
+import org.apache.flink.table.types.utils.TypeConversions
+
+import scala.collection.JavaConversions._
 
 /**
   * RelNode for Python ScalarFunctions.
@@ -46,7 +53,8 @@ class DataStreamPythonCalc(
     inputSchema,
     schema,
     calcProgram,
-    ruleDescription) {
+    ruleDescription)
+  with CommonPythonCalc {
 
   override def copy(traitSet: RelTraitSet, child: RelNode, program: RexProgram): Calc = {
     new DataStreamPythonCalc(
@@ -59,10 +67,37 @@ class DataStreamPythonCalc(
       ruleDescription)
   }
 
-  override def translateToPlan(
-      planner: StreamPlanner,
-      queryConfig: StreamQueryConfig): DataStream[CRow] = {
-    // Will add the implementation in FLINK-14018 as it's not testable for now.
-    null
+  override def translateToPlan(planner: StreamPlanner): DataStream[CRow] = {
+    val inputDataStream =
+      getInput.asInstanceOf[DataStreamRel].translateToPlan(planner)
+    val inputParallelism = inputDataStream.getParallelism
+
+    val pythonOperatorResultTypeInfo = new RowTypeInfo(
+      getForwardedFields(calcProgram).map(inputSchema.fieldTypeInfos.get(_)) ++
+        getPythonRexCalls(calcProgram).map(node => FlinkTypeFactory.toTypeInfo(node.getType)): _*)
+
+    // construct the Python operator
+    val pythonOperatorInputRowType = TypeConversions.fromLegacyInfoToDataType(
+      inputSchema.typeInfo).getLogicalType.asInstanceOf[RowType]
+    val pythonOperatorOutputRowType = TypeConversions.fromLegacyInfoToDataType(
+      pythonOperatorResultTypeInfo).getLogicalType.asInstanceOf[RowType]
+    val pythonOperator = getPythonScalarFunctionOperator(
+      getConfig(planner.getExecutionEnvironment, planner.getConfig),
+      pythonOperatorInputRowType,
+      pythonOperatorOutputRowType,
+      calcProgram)
+
+    val ret = inputDataStream
+      .transform(
+        calcOpName(calcProgram, getExpressionString),
+        CRowTypeInfo(pythonOperatorResultTypeInfo),
+        pythonOperator)
+      // keep parallelism to ensure order of accumulate and retract messages
+      .setParallelism(inputParallelism)
+
+    if (isPythonWorkerUsingManagedMemory(planner.getConfig.getConfiguration)) {
+      ret.getTransformation.declareManagedMemoryUseCaseAtSlotScope(ManagedMemoryUseCase.PYTHON)
+    }
+    ret
   }
 }

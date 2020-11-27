@@ -23,7 +23,6 @@ import org.apache.flink.api.common.Archiveable;
 import org.apache.flink.api.common.InputDependencyConstraint;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.time.Time;
-import org.apache.flink.configuration.JobManagerOptions;
 import org.apache.flink.core.io.InputSplit;
 import org.apache.flink.core.io.InputSplitAssigner;
 import org.apache.flink.runtime.JobException;
@@ -50,7 +49,6 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
@@ -61,7 +59,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.stream.IntStream;
 
 import static org.apache.flink.runtime.execution.ExecutionState.FINISHED;
 
@@ -94,34 +91,14 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	/** The name in the format "myTask (2/7)", cached to avoid frequent string concatenations. */
 	private final String taskNameWithSubtask;
 
-	private volatile CoLocationConstraint locationConstraint;
+	private CoLocationConstraint locationConstraint;
 
 	/** The current or latest execution attempt of this vertex's task. */
-	private volatile Execution currentExecution;	// this field must never be null
+	private Execution currentExecution;	// this field must never be null
 
 	private final ArrayList<InputSplit> inputSplits;
 
 	// --------------------------------------------------------------------------------------------
-
-	/**
-	 * Convenience constructor for tests. Sets various fields to default values.
-	 */
-	@VisibleForTesting
-	ExecutionVertex(
-			ExecutionJobVertex jobVertex,
-			int subTaskIndex,
-			IntermediateResult[] producedDataSets,
-			Time timeout) {
-
-		this(
-			jobVertex,
-			subTaskIndex,
-			producedDataSets,
-			timeout,
-			1L,
-			System.currentTimeMillis(),
-			JobManagerOptions.MAX_ATTEMPTS_HISTORY_SIZE.defaultValue());
-	}
 
 	/**
 	 * Creates an ExecutionVertex.
@@ -135,7 +112,7 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	 * @param maxPriorExecutionHistoryLength
 	 *            The number of prior Executions (= execution attempts) to keep.
 	 */
-	public ExecutionVertex(
+	ExecutionVertex(
 			ExecutionJobVertex jobVertex,
 			int subTaskIndex,
 			IntermediateResult[] producedDataSets,
@@ -616,14 +593,8 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 		}
 	}
 
-	public void resetForNewExecutionIfInTerminalState() {
-		if (isExecutionInTerminalState()) {
-			resetForNewExecutionInternal(System.currentTimeMillis(), getExecutionGraph().getGlobalModVersion());
-		}
-	}
-
-	private boolean isExecutionInTerminalState() {
-		return currentExecution.getState().isTerminal();
+	public void resetForNewExecution() {
+		resetForNewExecutionInternal(System.currentTimeMillis(), getExecutionGraph().getGlobalModVersion());
 	}
 
 	private Execution resetForNewExecutionInternal(final long timestamp, final long originatingGlobalModVersion) {
@@ -715,6 +686,7 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 		currentExecution.deploy();
 	}
 
+	@VisibleForTesting
 	public void deployToSlot(LogicalSlot slot) throws JobException {
 		if (currentExecution.tryAssignResource(slot)) {
 			currentExecution.deploy();
@@ -743,6 +715,16 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 
 	public void fail(Throwable t) {
 		currentExecution.fail(t);
+	}
+
+	/**
+	 * This method marks the task as failed, but will make no attempt to remove task execution from the task manager.
+	 * It is intended for cases where the task is known not to be deployed yet.
+	 *
+	 * @param t The exception that caused the task to fail.
+	 */
+	public void markFailed(Throwable t) {
+		currentExecution.markFailed(t);
 	}
 
 	/**
@@ -809,26 +791,54 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	 * @return whether the input constraint is satisfied
 	 */
 	boolean checkInputDependencyConstraints() {
-		if (getInputDependencyConstraint() == InputDependencyConstraint.ANY) {
-			// InputDependencyConstraint == ANY
-			return IntStream.range(0, inputEdges.length).anyMatch(this::isInputConsumable);
-		} else {
-			// InputDependencyConstraint == ALL
-			return IntStream.range(0, inputEdges.length).allMatch(this::isInputConsumable);
+		if (inputEdges.length == 0) {
+			return true;
 		}
+
+		final InputDependencyConstraint inputDependencyConstraint = getInputDependencyConstraint();
+		switch (inputDependencyConstraint) {
+			case ANY:
+				return isAnyInputConsumable();
+			case ALL:
+				return areAllInputsConsumable();
+			default:
+				throw new IllegalStateException("Unknown InputDependencyConstraint " + inputDependencyConstraint);
+		}
+	}
+
+	private boolean isAnyInputConsumable() {
+		for (int inputNumber = 0; inputNumber < inputEdges.length; inputNumber++) {
+			if (isInputConsumable(inputNumber)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private boolean areAllInputsConsumable() {
+		for (int inputNumber = 0; inputNumber < inputEdges.length; inputNumber++) {
+			if (!isInputConsumable(inputNumber)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
 	 * Get whether an input of the vertex is consumable.
 	 * An input is consumable when when any partition in it is consumable.
 	 *
-	 * Note that a BLOCKING result partition is only consumable when all partitions in the result are FINISHED.
+	 * <p>Note that a BLOCKING result partition is only consumable when all partitions in the result are FINISHED.
 	 *
 	 * @return whether the input is consumable
 	 */
 	boolean isInputConsumable(int inputNumber) {
-		return Arrays.stream(inputEdges[inputNumber]).map(ExecutionEdge::getSource).anyMatch(
-				IntermediateResultPartition::isConsumable);
+		for (ExecutionEdge executionEdge : inputEdges[inputNumber]) {
+			if (executionEdge.getSource().isConsumable()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	// --------------------------------------------------------------------------------------------
@@ -843,15 +853,39 @@ public class ExecutionVertex implements AccessExecutionVertex, Archiveable<Archi
 	//   Miscellaneous
 	// --------------------------------------------------------------------------------------------
 
+	void notifyPendingDeployment(Execution execution) {
+		// only forward this notification if the execution is still the current execution
+		// otherwise we have an outdated execution
+		if (isCurrentExecution(execution)) {
+			getExecutionGraph().getExecutionDeploymentListener().onStartedDeployment(
+				execution.getAttemptId(),
+				execution.getAssignedResourceLocation().getResourceID());
+		}
+	}
+
+	void notifyCompletedDeployment(Execution execution) {
+		// only forward this notification if the execution is still the current execution
+		// otherwise we have an outdated execution
+		if (isCurrentExecution(execution)) {
+			getExecutionGraph().getExecutionDeploymentListener().onCompletedDeployment(
+				execution.getAttemptId()
+			);
+		}
+	}
+
 	/**
 	 * Simply forward this notification.
 	 */
 	void notifyStateTransition(Execution execution, ExecutionState newState, Throwable error) {
 		// only forward this notification if the execution is still the current execution
 		// otherwise we have an outdated execution
-		if (currentExecution == execution) {
+		if (isCurrentExecution(execution)) {
 			getExecutionGraph().notifyExecutionChange(execution, newState, error);
 		}
+	}
+
+	private boolean isCurrentExecution(Execution execution) {
+		return currentExecution == execution;
 	}
 
 	// --------------------------------------------------------------------------------------------

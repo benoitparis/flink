@@ -21,10 +21,10 @@ package org.apache.flink.runtime.io.network.partition;
 import org.apache.flink.configuration.AkkaOptions;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.NettyShuffleEnvironmentOptions;
+import org.apache.flink.runtime.checkpoint.channel.ChannelStateWriter;
 import org.apache.flink.runtime.execution.Environment;
 import org.apache.flink.runtime.io.network.api.writer.ResultPartitionWriter;
 import org.apache.flink.runtime.io.network.buffer.Buffer;
-import org.apache.flink.runtime.io.network.buffer.BufferBuilder;
 import org.apache.flink.runtime.io.network.partition.consumer.InputGate;
 import org.apache.flink.runtime.jobgraph.DistributionPattern;
 import org.apache.flink.runtime.jobgraph.JobGraph;
@@ -38,6 +38,8 @@ import org.apache.flink.util.TestLogger;
 
 import org.junit.ClassRule;
 import org.junit.Test;
+
+import java.nio.ByteBuffer;
 
 /**
  * Test for consuming a pipelined result only partially.
@@ -94,8 +96,7 @@ public class PartialConsumePipelinedResultTest extends TestLogger {
 
 		final JobGraph jobGraph = new JobGraph("Partial Consume of Pipelined Result", sender, receiver);
 
-		final SlotSharingGroup slotSharingGroup = new SlotSharingGroup(
-			sender.getID(), receiver.getID());
+		final SlotSharingGroup slotSharingGroup = new SlotSharingGroup();
 
 		sender.setSlotSharingGroup(slotSharingGroup);
 		receiver.setSlotSharingGroup(slotSharingGroup);
@@ -119,10 +120,8 @@ public class PartialConsumePipelinedResultTest extends TestLogger {
 			final ResultPartitionWriter writer = getEnvironment().getWriter(0);
 
 			for (int i = 0; i < 8; i++) {
-				final BufferBuilder bufferBuilder = writer.getBufferBuilder();
-				writer.addBufferConsumer(bufferBuilder.createBufferConsumer(), 0);
+				writer.emitRecord(ByteBuffer.allocate(1024), 0);
 				Thread.sleep(50);
-				bufferBuilder.finish();
 			}
 		}
 	}
@@ -139,6 +138,12 @@ public class PartialConsumePipelinedResultTest extends TestLogger {
 		@Override
 		public void invoke() throws Exception {
 			InputGate gate = getEnvironment().getInputGate(0);
+			gate.finishReadRecoveredState();
+			while (!gate.getStateConsumedFuture().isDone()) {
+				gate.pollNext();
+			}
+			gate.setChannelStateWriter(ChannelStateWriter.NO_OP);
+			gate.requestPartitions();
 			Buffer buffer = gate.getNext().orElseThrow(IllegalStateException::new).getBuffer();
 			if (buffer != null) {
 				buffer.recycleBuffer();

@@ -23,14 +23,12 @@ import org.apache.flink.runtime.heartbeat.HeartbeatServices;
 import org.apache.flink.runtime.highavailability.HighAvailabilityServices;
 import org.apache.flink.runtime.jobgraph.JobGraph;
 import org.apache.flink.runtime.jobmaster.JobManagerRunner;
+import org.apache.flink.runtime.jobmaster.JobManagerRunnerImpl;
 import org.apache.flink.runtime.jobmaster.JobManagerSharedServices;
 import org.apache.flink.runtime.jobmaster.JobMasterConfiguration;
 import org.apache.flink.runtime.jobmaster.factories.DefaultJobMasterServiceFactory;
 import org.apache.flink.runtime.jobmaster.factories.JobManagerJobMetricGroupFactory;
 import org.apache.flink.runtime.jobmaster.factories.JobMasterServiceFactory;
-import org.apache.flink.runtime.jobmaster.slotpool.DefaultSchedulerFactory;
-import org.apache.flink.runtime.jobmaster.slotpool.DefaultSlotPoolFactory;
-import org.apache.flink.runtime.jobmaster.slotpool.SchedulerFactory;
 import org.apache.flink.runtime.jobmaster.slotpool.SlotPoolFactory;
 import org.apache.flink.runtime.rpc.FatalErrorHandler;
 import org.apache.flink.runtime.rpc.RpcService;
@@ -39,7 +37,7 @@ import org.apache.flink.runtime.shuffle.ShuffleMaster;
 import org.apache.flink.runtime.shuffle.ShuffleServiceLoader;
 
 /**
- * Singleton default factory for {@link JobManagerRunner}.
+ * Singleton default factory for {@link JobManagerRunnerImpl}.
  */
 public enum DefaultJobManagerRunnerFactory implements JobManagerRunnerFactory {
 	INSTANCE;
@@ -53,19 +51,18 @@ public enum DefaultJobManagerRunnerFactory implements JobManagerRunnerFactory {
 			HeartbeatServices heartbeatServices,
 			JobManagerSharedServices jobManagerServices,
 			JobManagerJobMetricGroupFactory jobManagerJobMetricGroupFactory,
-			FatalErrorHandler fatalErrorHandler) throws Exception {
+			FatalErrorHandler fatalErrorHandler,
+			long initializationTimestamp) throws Exception {
 
 		final JobMasterConfiguration jobMasterConfiguration = JobMasterConfiguration.fromConfiguration(configuration);
 
-		final SlotPoolFactory slotPoolFactory = DefaultSlotPoolFactory.fromConfiguration(configuration);
-		final SchedulerFactory schedulerFactory = DefaultSchedulerFactory.fromConfiguration(configuration);
-		final SchedulerNGFactory schedulerNGFactory = SchedulerNGFactoryFactory.createSchedulerNGFactory(configuration, jobManagerServices.getRestartStrategyFactory());
+		final SlotPoolFactory slotPoolFactory = SlotPoolFactory.fromConfiguration(configuration);
+		final SchedulerNGFactory schedulerNGFactory = SchedulerNGFactoryFactory.createSchedulerNGFactory(configuration);
 		final ShuffleMaster<?> shuffleMaster = ShuffleServiceLoader.loadShuffleServiceFactory(configuration).createShuffleMaster(configuration);
 
 		final JobMasterServiceFactory jobMasterFactory = new DefaultJobMasterServiceFactory(
 			jobMasterConfiguration,
 			slotPoolFactory,
-			schedulerFactory,
 			rpcService,
 			highAvailabilityServices,
 			jobManagerServices,
@@ -75,12 +72,13 @@ public enum DefaultJobManagerRunnerFactory implements JobManagerRunnerFactory {
 			schedulerNGFactory,
 			shuffleMaster);
 
-		return new JobManagerRunner(
+		return new JobManagerRunnerImpl(
 			jobGraph,
 			jobMasterFactory,
 			highAvailabilityServices,
-			jobManagerServices.getLibraryCacheManager(),
+			jobManagerServices.getLibraryCacheManager().registerClassLoaderLease(jobGraph.getJobID()),
 			jobManagerServices.getScheduledExecutorService(),
-			fatalErrorHandler);
+			fatalErrorHandler,
+			initializationTimestamp);
 	}
 }

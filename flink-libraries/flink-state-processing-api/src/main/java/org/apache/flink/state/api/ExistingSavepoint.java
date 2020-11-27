@@ -32,12 +32,16 @@ import org.apache.flink.api.java.typeutils.TupleTypeInfo;
 import org.apache.flink.api.java.typeutils.TypeExtractor;
 import org.apache.flink.runtime.checkpoint.OperatorState;
 import org.apache.flink.runtime.state.StateBackend;
+import org.apache.flink.runtime.state.VoidNamespace;
 import org.apache.flink.state.api.functions.KeyedStateReaderFunction;
 import org.apache.flink.state.api.input.BroadcastStateInputFormat;
 import org.apache.flink.state.api.input.KeyedStateInputFormat;
 import org.apache.flink.state.api.input.ListStateInputFormat;
 import org.apache.flink.state.api.input.UnionStateInputFormat;
+import org.apache.flink.state.api.input.operator.KeyedStateReaderOperator;
 import org.apache.flink.state.api.runtime.metadata.SavepointMetadata;
+import org.apache.flink.streaming.api.windowing.assigners.WindowAssigner;
+import org.apache.flink.streaming.api.windowing.windows.Window;
 import org.apache.flink.util.Preconditions;
 
 import java.io.IOException;
@@ -214,13 +218,14 @@ public class ExistingSavepoint extends WritableSavepoint<ExistingSavepoint> {
 		return env.createInput(inputFormat, new TupleTypeInfo<>(keyTypeInfo, valueTypeInfo));
 	}
 
-	/*
+	/**
 	 * Read keyed state from an operator in a {@code Savepoint}.
 	 * @param uid The uid of the operator.
 	 * @param function The {@link KeyedStateReaderFunction} that is called for each key in state.
 	 * @param <K> The type of the key in state.
 	 * @param <OUT> The output type of the transform function.
 	 * @return A {@code DataSet} of objects read from keyed state.
+	 * @throws IOException If the savepoint does not contain operator state with the given uid.
 	 */
 	public <K, OUT> DataSet<OUT> readKeyedState(String uid, KeyedStateReaderFunction<K, OUT> function) throws IOException {
 
@@ -265,6 +270,7 @@ public class ExistingSavepoint extends WritableSavepoint<ExistingSavepoint> {
 	 * @param <K> The type of the key in state.
 	 * @param <OUT> The output type of the transform function.
 	 * @return A {@code DataSet} of objects read from keyed state.
+	 * @throws IOException If the savepoint does not contain operator state with the given uid.
 	 */
 	public <K, OUT> DataSet<OUT> readKeyedState(
 		String uid,
@@ -273,12 +279,37 @@ public class ExistingSavepoint extends WritableSavepoint<ExistingSavepoint> {
 		TypeInformation<OUT> outTypeInfo) throws IOException {
 
 		OperatorState operatorState = metadata.getOperatorState(uid);
-		KeyedStateInputFormat<K, OUT> inputFormat = new KeyedStateInputFormat<>(
+		KeyedStateInputFormat<K, VoidNamespace, OUT> inputFormat = new KeyedStateInputFormat<>(
 			operatorState,
 			stateBackend,
-			keyTypeInfo,
-			function);
+			env.getConfiguration(),
+			new KeyedStateReaderOperator<>(function, keyTypeInfo));
 
 		return env.createInput(inputFormat, outTypeInfo);
+	}
+
+	/**
+	 * Read window state from an operator in a {@code Savepoint}.
+	 * This method supports reading from any type of window.
+	 *
+	 * @param assigner The {@link WindowAssigner} used to write out the operator.
+	 * @return A {@link WindowReader}.
+	 */
+	public <W extends Window> WindowReader<W> window(WindowAssigner<?, W> assigner) {
+		Preconditions.checkNotNull(assigner, "The window assigner must not be null");
+		TypeSerializer<W> windowSerializer = assigner.getWindowSerializer(env.getConfig());
+		return window(windowSerializer);
+	}
+
+	/**
+	 * Read window state from an operator in a {@code Savepoint}.
+	 * This method supports reading from any type of window.
+	 *
+	 * @param windowSerializer The serializer used for the window type.
+	 * @return A {@link WindowReader}.
+	 */
+	public <W extends Window> WindowReader<W> window(TypeSerializer<W> windowSerializer) {
+		Preconditions.checkNotNull(windowSerializer, "The window serializer must not be null");
+		return new WindowReader<>(env, metadata, stateBackend, windowSerializer);
 	}
 }
